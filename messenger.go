@@ -108,8 +108,7 @@ func (m *Messenger) handleMessage(msg Sendable) {
 	}
 	_, err := sendMessage(m.accessToken, msg)
 	if err != nil {
-		logger.Error("failed to send message, re-add message to queue", "err", err)
-		m.enqueueMessage(msg)
+		logger.Error("failed to send message, throw away it", "err", err)
 		return
 	}
 	err = m.cachePut(msg)
