@@ -32,7 +32,8 @@ type Bot struct {
 	chatHandlers  []HandlerFunc[ChatMessage]
 	eventHandlers []HandlerFunc[EventMessage]
 
-	cancel context.CancelFunc
+	cancel    context.CancelFunc
+	destroyed bool
 }
 
 func NewBot(clientId, clientSecret string) (*Bot, error) {
@@ -135,6 +136,9 @@ func (bot *Bot) HandleEvent(handler EventHandlerFunc) *Bot {
 }
 
 func (bot *Bot) Start() error {
+	if bot.destroyed {
+		return errors.New("bot has been destroyed")
+	}
 	SetLogger(&iLogger{})
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -146,9 +150,14 @@ func (bot *Bot) Start() error {
 	if err != nil {
 		return err
 	}
-	defer bot.c.Close()
 
 	<-ctx.Done()
+
+	defer func() {
+		bot.c.Close()
+		close(bot.Messenger.mq)
+		bot.destroyed = true
+	}()
 
 	return nil
 }
