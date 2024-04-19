@@ -118,6 +118,7 @@ func (m *Messenger) handleMessageQueue() {
 			if !mq.Empty() {
 				m.mq <- mq.Dequeue()
 			}
+			
 		}
 	})
 }

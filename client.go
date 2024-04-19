@@ -92,7 +92,7 @@ func (c *Client) onMessage(message *Message) error {
 	if !ok {
 		return nil
 	}
-	middlewares, handler := module.handlers(message)
+	middlewares, handler := module.handlers()
 	return (&Context{
 		Message:     message,
 		Client:      c,
