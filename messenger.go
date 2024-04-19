@@ -23,21 +23,6 @@ type Messenger struct {
 	tokenExpiry time.Time
 }
 
-func newMessenger() (*Messenger, error) {
-	options := badger.DefaultOptions("").WithInMemory(true)
-	db, err := badger.Open(options)
-	if err != nil {
-		return nil, err
-	}
-	return &Messenger{
-		cache:       db,
-		mqm:         newRWMap[string, *queue.Queue[Sendable]](),
-		mq:          make(chan Sendable, 10),
-		storage:     make(map[string]string),
-		tokenExpiry: time.Now(),
-	}, nil
-}
-
 func (m *Messenger) start(ctx context.Context) {
 	go m.startAccessTokenRefresher(ctx)
 	go m.startMessageQueueMapScanner(ctx)

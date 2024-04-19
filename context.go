@@ -6,26 +6,29 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-type Context[T any] struct {
-	Message T
-	Bot IBot
+type HandlerFunc func(*Context)
+
+type Context struct {
+	*Message
+
+	Client *Client
 
 	index       int
-	middlewares []HandlerFunc[T]
-	handler     HandlerFunc[T]
+	middlewares []HandlerFunc
+	handler     HandlerFunc
 
 	Next func()
 }
 
-func (c *Context[T]) Abort() {
+func (c *Context) Abort() {
 	c.AbortWithError(nil)
 }
 
-func (c *Context[T]) AbortWithError(err error) {
+func (c *Context) AbortWithError(err error) {
 	panic(err)
 }
 
-func (c *Context[T]) dealWithMiddlewares() {
+func (c *Context) dealWithMiddlewares() {
 	c.Next = func() {
 		c.index++
 		if c.middlewares == nil {
@@ -39,7 +42,7 @@ func (c *Context[T]) dealWithMiddlewares() {
 	c.Next()
 }
 
-func (c *Context[T]) handling() (err error) {
+func (c *Context) handling() (err error) {
 	defer func() {
 		if e := recover(); e != nil {
 			switch e := e.(type) {
@@ -51,16 +54,29 @@ func (c *Context[T]) handling() (err error) {
 		}
 	}()
 
-	c.dealWithMiddlewares()
-	if c.index != len(c.middlewares) {
+	if c.handler == nil {
 		return nil
 	}
 
-	c.handler(c)
+	logger.Info(fmt.Sprintf("Handling %s %s", c.Message.Type, func() string {
+		switch c.Message.Type {
+		case ChatType:
+			return (*c.Message.Chat()).MsgId
+		case EventType:
+			return (*c.Message.Event()).Header.EventId
+		}
+		return "unknown"
+	}()))
+
+	c.dealWithMiddlewares()
+	// if all middlewares are called
+	if c.index == len(c.middlewares) {
+		c.handler(c)
+	}
 
 	return nil
 }
 
-func (c *Context[T]) Logger() *log.Logger {
+func (c *Context) Logger() *log.Logger {
 	return logger
 }
