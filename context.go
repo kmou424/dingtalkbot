@@ -61,9 +61,9 @@ func (c *Context) handling() (err error) {
 	logger.Info(fmt.Sprintf("Handling %s %s", c.Message.Type, func() string {
 		switch c.Message.Type {
 		case TypeChat:
-			return (*c.Message.Chat()).MsgId
+			return c.Message.Chat().MsgId
 		case TypeEvent:
-			return (*c.Message.Event()).Header.EventId
+			return c.Message.Event().Header.EventId
 		}
 		return "unknown"
 	}()))

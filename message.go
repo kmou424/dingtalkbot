@@ -25,12 +25,12 @@ type Message struct {
 	data any
 }
 
-func (m *Message) Event() *EventMessage {
-	return m.data.(*EventMessage)
+func (m *Message) Event() EventMessage {
+	return m.data.(EventMessage)
 }
 
-func (m *Message) Chat() *ChatMessage {
-	return m.data.(*ChatMessage)
+func (m *Message) Chat() ChatMessage {
+	return m.data.(ChatMessage)
 }
 
 func toMessage(data any) *Message {
