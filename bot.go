@@ -9,29 +9,23 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
-	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
-	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
-	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/event"
-	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/logger"
-	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/payload"
-	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/utils"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
+	dingClient "github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/event"
+	dingLogger "github.com/open-dingtalk/dingtalk-stream-sdk-go/logger"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/payload"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/utils"
 	"golang.org/x/exp/maps"
 )
 
-type ChatMessage *BotCallbackDataModel
-
-type structEventMessage struct {
-	Header *EventHeader
-	Data   *RWMap[string, *Value]
-}
-type EventMessage *structEventMessage
-
 type IBot interface {
 	Messenger() *Messenger
-	chatHandlerEntry(ChatMessage) error
-	eventHandlerEntry(EventMessage) error
+
 	Start() error
 	Stop() error
+
+	chatHandlerEntry(ChatMessage) error
+	eventHandlerEntry(EventMessage) error
 }
 
 type BaseBot struct {
@@ -40,7 +34,7 @@ type BaseBot struct {
 	clientId     string
 	clientSecret string
 
-	c *StreamClient
+	c *dingClient.StreamClient
 
 	chatHandler  HandlerFunc[ChatMessage]
 	eventHandler HandlerFunc[EventMessage]
@@ -66,18 +60,22 @@ func NewBaseBot(clientId, clientSecret string) (*BaseBot, error) {
 		storage["robotCode"] = bot.clientId
 	}(bot.messenger.storage)
 
-	bot.c = NewStreamClient(
-		WithAppCredential(NewAppCredentialConfig(clientId, clientSecret)),
-		WithUserAgent(NewDingtalkGoSDKUserAgent()),
-		WithSubscription(
-			SubscriptionTypeKCallback,
-			BotMessageCallbackTopic,
-			NewDefaultChatBotFrameHandler(bot.onChatReceived).OnEventReceived,
+	bot.c = dingClient.NewStreamClient(
+		dingClient.WithAppCredential(
+			dingClient.NewAppCredentialConfig(clientId, clientSecret),
 		),
-		WithSubscription(
-			SubscriptionTypeKEvent,
+		dingClient.WithUserAgent(
+			dingClient.NewDingtalkGoSDKUserAgent(),
+		),
+		dingClient.WithSubscription(
+			utils.SubscriptionTypeKCallback,
+			payload.BotMessageCallbackTopic,
+			chatbot.NewDefaultChatBotFrameHandler(bot.onChatReceived).OnEventReceived,
+		),
+		dingClient.WithSubscription(
+			utils.SubscriptionTypeKEvent,
 			"*",
-			NewDefaultEventFrameHandler(bot.onEventReceived).OnEventReceived,
+			event.NewDefaultEventFrameHandler(bot.onEventReceived).OnEventReceived,
 		),
 	)
 
@@ -85,7 +83,7 @@ func NewBaseBot(clientId, clientSecret string) (*BaseBot, error) {
 }
 
 func (bot *BaseBot) AutoReconnect() *BaseBot {
-	WithAutoReconnect(true)(bot.c)
+	dingClient.WithAutoReconnect(true)(bot.c)
 	return bot
 }
 
@@ -102,7 +100,7 @@ func (bot *BaseBot) Messenger() *Messenger {
 	return bot.messenger
 }
 
-func (bot *BaseBot) onChatReceived(ctx context.Context, data *BotCallbackDataModel) (_ []byte, err error) {
+func (bot *BaseBot) onChatReceived(ctx context.Context, data *chatbot.BotCallbackDataModel) (_ []byte, err error) {
 	select {
 	case <-ctx.Done():
 		return
@@ -112,15 +110,15 @@ func (bot *BaseBot) onChatReceived(ctx context.Context, data *BotCallbackDataMod
 	return
 }
 
-func (bot *BaseBot) onEventReceived(ctx context.Context, header *EventHeader, rawData []byte) (_ EventProcessStatusType, err error) {
+func (bot *BaseBot) onEventReceived(ctx context.Context, header *event.EventHeader, rawData []byte) (_ event.EventProcessStatusType, err error) {
 	select {
 	case <-ctx.Done():
-		return EventProcessStatusKSuccess, nil
+		return event.EventProcessStatusKSuccess, nil
 	default:
 		data := newRWValueMap[string]()
 		err = json.Unmarshal(rawData, data)
 		if err != nil {
-			return EventProcessStatusKLater, err
+			return event.EventProcessStatusKLater, err
 		}
 		message := &structEventMessage{
 			Header: header,
@@ -128,10 +126,10 @@ func (bot *BaseBot) onEventReceived(ctx context.Context, header *EventHeader, ra
 		}
 		err = bot.eventHandlerEntry(message)
 		if err != nil {
-			return EventProcessStatusKLater, err
+			return event.EventProcessStatusKLater, err
 		}
 	}
-	return EventProcessStatusKSuccess, nil
+	return event.EventProcessStatusKSuccess, nil
 }
 
 func (bot *BaseBot) chatHandlerEntry(msg ChatMessage) error {
@@ -164,7 +162,7 @@ func (bot *BaseBot) Start() error {
 	if bot.destroyed {
 		return errors.New("bot has been destroyed")
 	}
-	SetLogger(&iLogger{})
+	dingLogger.SetLogger(&iLogger{})
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	bot.cancel = cancelFunc
