@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
+	"sort"
+	"strings"
+
 	"github.com/charmbracelet/log"
 	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
@@ -11,6 +15,7 @@ import (
 	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/logger"
 	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/payload"
 	. "github.com/open-dingtalk/dingtalk-stream-sdk-go/utils"
+	"golang.org/x/exp/maps"
 )
 
 type ChatMessage *BotCallbackDataModel
@@ -21,32 +26,45 @@ type structEventMessage struct {
 }
 type EventMessage *structEventMessage
 
-type Bot struct {
-	*Messenger
+type IBot interface {
+	Messenger() *Messenger
+	chatHandlerEntry(ChatMessage) error
+	eventHandlerEntry(EventMessage) error
+	Start() error
+	Stop() error
+}
+
+type BaseBot struct {
+	messenger *Messenger
 
 	clientId     string
 	clientSecret string
 
 	c *StreamClient
 
-	chatHandlers  []HandlerFunc[ChatMessage]
-	eventHandlers []HandlerFunc[EventMessage]
+	chatHandler  HandlerFunc[ChatMessage]
+	eventHandler HandlerFunc[EventMessage]
 
 	cancel    context.CancelFunc
 	destroyed bool
 }
 
-func NewBot(clientId, clientSecret string) (*Bot, error) {
-	bot := &Bot{
+func NewBaseBot(clientId, clientSecret string) (*BaseBot, error) {
+	bot := &BaseBot{
 		clientId:     clientId,
 		clientSecret: clientSecret,
 	}
-	messenger, err := newMessenger()
+	var err error
+	bot.messenger, err = newMessenger()
 	if err != nil {
 		return nil, err
 	}
-	bot.initStorage(messenger.storage)
-	bot.Messenger = messenger
+
+	func(storage map[string]string) {
+		storage["clientId"] = bot.clientId
+		storage["clientSecret"] = bot.clientSecret
+		storage["robotCode"] = bot.clientId
+	}(bot.messenger.storage)
 
 	bot.c = NewStreamClient(
 		WithAppCredential(NewAppCredentialConfig(clientId, clientSecret)),
@@ -66,18 +84,12 @@ func NewBot(clientId, clientSecret string) (*Bot, error) {
 	return bot, nil
 }
 
-func (bot *Bot) initStorage(storage map[string]string) {
-	storage["clientId"] = bot.clientId
-	storage["clientSecret"] = bot.clientSecret
-	storage["robotCode"] = bot.clientId
-}
-
-func (bot *Bot) AutoReconnect() *Bot {
+func (bot *BaseBot) AutoReconnect() *BaseBot {
 	WithAutoReconnect(true)(bot.c)
 	return bot
 }
 
-func (bot *Bot) SetDebug(debug bool) *Bot {
+func (bot *BaseBot) SetDebug(debug bool) *BaseBot {
 	if debug {
 		logger.SetLevel(log.DebugLevel)
 	} else {
@@ -86,21 +98,21 @@ func (bot *Bot) SetDebug(debug bool) *Bot {
 	return bot
 }
 
-func (bot *Bot) onChatReceived(ctx context.Context, data *BotCallbackDataModel) (_ []byte, err error) {
+func (bot *BaseBot) Messenger() *Messenger {
+	return bot.messenger
+}
+
+func (bot *BaseBot) onChatReceived(ctx context.Context, data *BotCallbackDataModel) (_ []byte, err error) {
 	select {
 	case <-ctx.Done():
 		return
 	default:
-		err = (&Context[ChatMessage]{
-			Message:  data,
-			Bot:      bot,
-			handlers: bot.chatHandlers,
-		}).start()
+		err = bot.chatHandlerEntry(data)
 	}
 	return
 }
 
-func (bot *Bot) onEventReceived(ctx context.Context, header *EventHeader, rawData []byte) (_ EventProcessStatusType, err error) {
+func (bot *BaseBot) onEventReceived(ctx context.Context, header *EventHeader, rawData []byte) (_ EventProcessStatusType, err error) {
 	select {
 	case <-ctx.Done():
 		return EventProcessStatusKSuccess, nil
@@ -110,14 +122,11 @@ func (bot *Bot) onEventReceived(ctx context.Context, header *EventHeader, rawDat
 		if err != nil {
 			return EventProcessStatusKLater, err
 		}
-		err = (&Context[EventMessage]{
-			Message: &structEventMessage{
-				Header: header,
-				Data:   data,
-			},
-			Bot:      bot,
-			handlers: bot.eventHandlers,
-		}).start()
+		message := &structEventMessage{
+			Header: header,
+			Data:   data,
+		}
+		err = bot.eventHandlerEntry(message)
 		if err != nil {
 			return EventProcessStatusKLater, err
 		}
@@ -125,17 +134,33 @@ func (bot *Bot) onEventReceived(ctx context.Context, header *EventHeader, rawDat
 	return EventProcessStatusKSuccess, nil
 }
 
-func (bot *Bot) HandleChat(handler ChatHandlerFunc) *Bot {
-	bot.chatHandlers = append(bot.chatHandlers, HandlerFunc[ChatMessage](handler))
+func (bot *BaseBot) chatHandlerEntry(msg ChatMessage) error {
+	return (&Context[ChatMessage]{
+		Message: msg,
+		Bot:     bot,
+		handler: bot.chatHandler,
+	}).handling()
+}
+
+func (bot *BaseBot) eventHandlerEntry(msg EventMessage) error {
+	return (&Context[EventMessage]{
+		Message: msg,
+		Bot:     bot,
+		handler: bot.eventHandler,
+	}).handling()
+}
+
+func (bot *BaseBot) HandleChat(handler ChatHandlerFunc) *BaseBot {
+	bot.chatHandler = HandlerFunc[ChatMessage](handler)
 	return bot
 }
 
-func (bot *Bot) HandleEvent(handler EventHandlerFunc) *Bot {
-	bot.eventHandlers = append(bot.eventHandlers, HandlerFunc[EventMessage](handler))
+func (bot *BaseBot) HandleEvent(handler EventHandlerFunc) *BaseBot {
+	bot.eventHandler = HandlerFunc[EventMessage](handler)
 	return bot
 }
 
-func (bot *Bot) Start() error {
+func (bot *BaseBot) Start() error {
 	if bot.destroyed {
 		return errors.New("bot has been destroyed")
 	}
@@ -144,7 +169,7 @@ func (bot *Bot) Start() error {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	bot.cancel = cancelFunc
 
-	bot.Messenger.start(ctx)
+	bot.messenger.start(ctx)
 
 	err := bot.c.Start(ctx)
 	if err != nil {
@@ -155,18 +180,110 @@ func (bot *Bot) Start() error {
 
 	defer func() {
 		bot.c.Close()
-		close(bot.Messenger.mq)
+		close(bot.messenger.mq)
 		bot.destroyed = true
 	}()
 
 	return nil
 }
 
-func (bot *Bot) Stop() error {
+func (bot *BaseBot) Stop() error {
 	if bot.cancel == nil {
 		return errors.New("can't stop a never started bot")
 	}
 
 	bot.cancel()
 	return nil
+}
+
+// MiddlewareBot handler for command like "/cmd", every command will hit all middlewares and one handler
+type MiddlewareBot struct {
+	base                 *BaseBot
+	chatMiddlewares      []HandlerFunc[ChatMessage]
+	eventMiddlewares     []HandlerFunc[EventMessage]
+	chatHandlersMapping  map[string]HandlerFunc[ChatMessage]
+	eventHandlersMapping map[string]HandlerFunc[EventMessage]
+}
+
+const (
+	defaultChatCommand = "/*"
+	defaultEventKey    = "*"
+
+	commandPrefix = "/"
+	eventPrefix   = "event:"
+)
+
+func (bot *BaseBot) MiddlewareBot() *MiddlewareBot {
+	return &MiddlewareBot{
+		base:                 bot,
+		chatMiddlewares:      []HandlerFunc[ChatMessage]{},
+		eventMiddlewares:     []HandlerFunc[EventMessage]{},
+		chatHandlersMapping:  map[string]HandlerFunc[ChatMessage]{},
+		eventHandlersMapping: map[string]HandlerFunc[EventMessage]{},
+	}
+}
+
+func (bot *MiddlewareBot) Messenger() *Messenger {
+	return bot.base.Messenger()
+}
+
+func (bot *MiddlewareBot) chatHandlerEntry(msg ChatMessage) error {
+	msgContent := strings.Trim(msg.Text.Content, " ")
+	if !strings.HasPrefix(msgContent, "/") {
+		return nil
+	}
+
+	targetCmd := defaultChatCommand
+	validCmdList := maps.Keys(bot.chatHandlersMapping)
+	sort.Strings(validCmdList)
+	for _, command := range validCmdList {
+		if strings.HasPrefix(msgContent, command) {
+			targetCmd = command
+		}
+	}
+
+	// can't hit valid handler of command
+	if !slices.Contains(validCmdList, targetCmd) {
+		return nil
+	}
+
+	return (&Context[ChatMessage]{
+		Message:     msg,
+		Bot:         bot,
+		middlewares: bot.chatMiddlewares,
+		handler:     bot.chatHandlersMapping[targetCmd],
+	}).handling()
+}
+
+func (bot *MiddlewareBot) eventHandlerEntry(msg EventMessage) error {
+	receivedKey := eventPrefix + msg.Header.EventType
+
+	targetEvent := defaultEventKey
+	validEventList := maps.Keys(bot.eventHandlersMapping)
+	sort.Strings(validEventList)
+	for _, event := range validEventList {
+		if receivedKey == event {
+			targetEvent = event
+		}
+	}
+
+	// can't hit valid handler of event
+	if !slices.Contains(validEventList, targetEvent) {
+		return nil
+	}
+
+	return (&Context[EventMessage]{
+		Message:     msg,
+		Bot:         bot,
+		middlewares: bot.eventMiddlewares,
+		handler:     bot.eventHandlersMapping[targetEvent],
+	}).handling()
+}
+
+func (bot *MiddlewareBot) Start() error {
+	return bot.base.Start()
+}
+
+func (bot *MiddlewareBot) Stop() error {
+	return bot.base.Stop()
 }
