@@ -1,7 +1,7 @@
 package dingtalkbot
 
 type Module interface {
-	handlers() (middlewares []HandlerFunc, handler HandlerFunc)
+	handlers(message *Message) (middlewares []HandlerFunc, handler HandlerFunc)
 }
 
 // Simple only one handler module
@@ -18,6 +18,6 @@ func (s *Simple) Handle(handler HandlerFunc) *Simple {
 	return s
 }
 
-func (s *Simple) handlers() ([]HandlerFunc, HandlerFunc) {
+func (s *Simple) handlers(_ *Message) ([]HandlerFunc, HandlerFunc) {
 	return nil, s.handler
 }
