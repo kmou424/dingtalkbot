@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-const MQScanInterval = time.Second
-const CachePrefix = "message_%s_"
+const iMQScanInterval = time.Second
+const iCachePrefix = "message_%s_"
 
 type Messenger struct {
 	cache *badger.DB
@@ -35,7 +35,7 @@ func (m *Messenger) startMessageQueueMapScanner(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(MQScanInterval):
+		case <-time.After(iMQScanInterval):
 			m.handleMessageQueue()
 		}
 	}
@@ -104,7 +104,7 @@ func (m *Messenger) handleMessage(msg Sendable) {
 
 func (m *Messenger) handleMessageQueue() {
 	m.mqm.Each(func(conversationId string, mq *queue.Queue[Sendable]) bool {
-		prefix := fmt.Sprintf(CachePrefix, conversationId)
+		prefix := fmt.Sprintf(iCachePrefix, conversationId)
 		for {
 			count, err := m.cacheScan(prefix)
 			if err != nil {
@@ -148,7 +148,7 @@ func (m *Messenger) cacheScan(prefix string) (count int, err error) {
 func (m *Messenger) cachePut(msg Sendable) error {
 	return m.cache.Update(func(txn *badger.Txn) error {
 		cacheId := uuid.New().String()
-		cacheKey := fmt.Sprintf(CachePrefix+"%s", msg.OpenConversationId(), cacheId)
+		cacheKey := fmt.Sprintf(iCachePrefix+"%s", msg.OpenConversationId(), cacheId)
 		entry := badger.NewEntry([]byte(cacheKey), []byte(cacheId)).WithTTL(time.Minute)
 		return txn.SetEntry(entry)
 	})

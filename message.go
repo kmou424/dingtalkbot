@@ -8,12 +8,12 @@ import (
 type MessageType string
 
 const (
-	ChatType  MessageType = "Chat"
-	EventType MessageType = "Event"
+	TypeChat  MessageType = "Chat"
+	TypeEvent MessageType = "Event"
 )
 
 type (
-	ChatMessage *chatbot.BotCallbackDataModel
+	ChatMessage  *chatbot.BotCallbackDataModel
 	EventMessage *(struct {
 		Header *event.EventHeader
 		data   *RWMap[string, *Value]
@@ -30,7 +30,7 @@ func (m *Message) Event() *EventMessage {
 }
 
 func (m *Message) Chat() *ChatMessage {
-  return m.data.(*ChatMessage)
+	return m.data.(*ChatMessage)
 }
 
 func toMessage(data any) *Message {
@@ -39,9 +39,9 @@ func toMessage(data any) *Message {
 		Type: func() MessageType {
 			switch data.(type) {
 			case ChatMessage:
-				return ChatType
+				return TypeChat
 			case EventMessage:
-				return EventType
+				return TypeEvent
 			}
 			return "unknown"
 		}(),
