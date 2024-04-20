@@ -21,3 +21,29 @@ func (s *Simple) Handle(handler HandlerFunc) *Simple {
 func (s *Simple) handlers(_ *Message) ([]HandlerFunc, HandlerFunc) {
 	return nil, s.handler
 }
+
+// Chain multi handler module
+type Chain struct {
+  middlewares []HandlerFunc
+	handler HandlerFunc
+}
+
+func ModuleChain() *Chain {
+  return &Chain{
+		middlewares: []HandlerFunc{},
+	}
+}
+
+func (c *Chain) Use(middleware HandlerFunc) *Chain {
+	c.middlewares = append(c.middlewares, middleware)
+	return c
+}
+
+func (c *Chain) Handle(handler HandlerFunc) *Chain {
+  c.handler = handler
+	return c
+}
+
+func (c *Chain) handlers(_ *Message) ([]HandlerFunc, HandlerFunc) {
+  return c.middlewares, c.handler
+}
