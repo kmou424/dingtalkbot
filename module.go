@@ -1,5 +1,10 @@
 package dingtalkbot
 
+import (
+	"fmt"
+	"strings"
+)
+
 type Module interface {
 	handlers(message *Message) (middlewares []HandlerFunc, handler HandlerFunc)
 }
@@ -24,12 +29,12 @@ func (s *Simple) handlers(_ *Message) ([]HandlerFunc, HandlerFunc) {
 
 // Chain multi handler module
 type Chain struct {
-  middlewares []HandlerFunc
-	handler HandlerFunc
+	middlewares []HandlerFunc
+	handler     HandlerFunc
 }
 
 func ModuleChain() *Chain {
-  return &Chain{
+	return &Chain{
 		middlewares: []HandlerFunc{},
 	}
 }
@@ -40,10 +45,59 @@ func (c *Chain) Use(middleware HandlerFunc) *Chain {
 }
 
 func (c *Chain) Handle(handler HandlerFunc) *Chain {
-  c.handler = handler
+	c.handler = handler
 	return c
 }
 
 func (c *Chain) handlers(_ *Message) ([]HandlerFunc, HandlerFunc) {
-  return c.middlewares, c.handler
+	return c.middlewares, c.handler
+}
+
+// ChatChain check prefix as command handler module
+type ChatChain struct {
+	middlewares []HandlerFunc
+	handlerMap  *RWMap[string, HandlerFunc]
+	defHandler  HandlerFunc
+}
+
+func ModuleChatChain() *ChatChain {
+	return &ChatChain{
+		middlewares: []HandlerFunc{},
+		handlerMap:  newRWMap[string, HandlerFunc](),
+	}
+}
+
+func (c *ChatChain) formatPrefix(command string) string {
+	return fmt.Sprintf("/%s", command)
+}
+
+func (c *ChatChain) Use(middleware HandlerFunc) *ChatChain {
+	c.middlewares = append(c.middlewares, middleware)
+	return c
+}
+
+func (c *ChatChain) Handle(command string, handler HandlerFunc) *ChatChain {
+	c.handlerMap.Put(c.formatPrefix(command), handler)
+	return c
+}
+
+func (c *ChatChain) Default(handler HandlerFunc) *ChatChain {
+	c.defHandler = handler
+	return c
+}
+
+func (c *ChatChain) handlers(message *Message) ([]HandlerFunc, HandlerFunc) {
+	if message.Type != TypeChat {
+		return nil, nil
+	}
+	content := strings.TrimLeft(message.Chat().Text.Content, " ")
+	handler := c.defHandler
+	c.handlerMap.Each(func(command string, h HandlerFunc) bool {
+		if strings.HasPrefix(content, command) {
+			handler = h
+			return false
+		}
+		return true
+	})
+	return c.middlewares, handler
 }
