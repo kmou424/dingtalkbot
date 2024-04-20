@@ -93,7 +93,8 @@ func (c *ChatChain) handlers(message *Message) ([]HandlerFunc, HandlerFunc) {
 	content := strings.TrimLeft(message.Chat().Text.Content, " ")
 	handler := c.defHandler
 	c.handlerMap.Each(func(command string, h HandlerFunc) bool {
-		if strings.HasPrefix(content, command) {
+		// if command start with arguments, must is a space of suffix
+		if strings.HasPrefix(content, command + " ") || content == command {
 			handler = h
 			return false
 		}
