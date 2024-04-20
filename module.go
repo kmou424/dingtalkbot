@@ -9,7 +9,7 @@ type Simple struct {
 	handler HandlerFunc
 }
 
-func NewSimple() *Simple {
+func ModuleSimple() *Simple {
 	return &Simple{}
 }
 
