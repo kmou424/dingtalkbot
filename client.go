@@ -37,7 +37,7 @@ func NewClient(id, secret string) (client *Client, err error) {
 	client = (&Client{
 		clientId:     id,
 		clientSecret: secret,
-		modules:      newRWMap[MessageType, Module](),
+		modules:      NewRWMap[MessageType, Module](),
 	}).Debug(false)
 
 	err = client.initCache()
@@ -48,7 +48,7 @@ func NewClient(id, secret string) (client *Client, err error) {
 	// init messenger
 	client.Messenger = &Messenger{
 		cache:       client.cache,
-		mqm:         newRWMap[string, *queue.Queue[Sendable]](),
+		mqm:         NewRWMap[string, *queue.Queue[Sendable]](),
 		mq:          make(chan Sendable, 10),
 		storage:     make(map[string]string),
 		tokenExpiry: time.Now(),
@@ -105,7 +105,7 @@ func (c *Client) onEventReceived(ctx context.Context, header *event.EventHeader,
 	case <-ctx.Done():
 		return event.EventProcessStatusKSuccess, nil
 	default:
-		data := newRWValueMap[string]()
+		data := NewRWValueMap[string]()
 		err = json.Unmarshal(rawData, data)
 		if err != nil {
 			return event.EventProcessStatusKLater, err

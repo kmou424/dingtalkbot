@@ -73,7 +73,7 @@ type ChatChain struct {
 func ModuleChatChain() *ChatChain {
 	return &ChatChain{
 		middlewares: []HandlerFunc{},
-		handlerMap:  newRWMap[string, HandlerFunc](),
+		handlerMap:  NewRWMap[string, HandlerFunc](),
 	}
 }
 

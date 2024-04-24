@@ -11,15 +11,15 @@ type RWMap[T comparable, R any] struct {
 	data  map[T]R
 }
 
-func newRWMap[T comparable, R any]() *RWMap[T, R] {
+func NewRWMap[T comparable, R any]() *RWMap[T, R] {
 	return &RWMap[T, R]{
 		mutex: &sync.RWMutex{},
 		data:  make(map[T]R),
 	}
 }
 
-func newRWValueMap[T comparable]() *RWMap[T, *Value] {
-	return newRWMap[T, *Value]()
+func NewRWValueMap[T comparable]() *RWMap[T, *Value] {
+	return NewRWMap[T, *Value]()
 }
 
 //goland:noinspection GoMixedReceiverTypes
