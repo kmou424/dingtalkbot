@@ -6,7 +6,7 @@ import (
 )
 
 type Module interface {
-	handlers(message *Message) (middlewares []HandlerFunc, handler HandlerFunc)
+	parseContext(message *Message) *Context
 }
 
 // Simple only one handler module
@@ -23,8 +23,13 @@ func (s *Simple) Handle(handler HandlerFunc) *Simple {
 	return s
 }
 
-func (s *Simple) handlers(_ *Message) ([]HandlerFunc, HandlerFunc) {
-	return nil, s.handler
+func (s *Simple) parseContext(message *Message) *Context {
+	return &Context{
+		Message:     message,
+		middlewares: nil,
+		handler:     s.handler,
+		args:        []string{},
+	}
 }
 
 // Chain multi handler module
@@ -49,8 +54,13 @@ func (c *Chain) Handle(handler HandlerFunc) *Chain {
 	return c
 }
 
-func (c *Chain) handlers(_ *Message) ([]HandlerFunc, HandlerFunc) {
-	return c.middlewares, c.handler
+func (c *Chain) parseContext(message *Message) *Context {
+	return &Context{
+		Message:     message,
+		middlewares: c.middlewares,
+		handler:     c.handler,
+		args:        []string{},
+	}
 }
 
 // ChatChain check prefix as command handler module
@@ -86,19 +96,30 @@ func (c *ChatChain) Default(handler HandlerFunc) *ChatChain {
 	return c
 }
 
-func (c *ChatChain) handlers(message *Message) ([]HandlerFunc, HandlerFunc) {
+func (c *ChatChain) parseContext(message *Message) *Context {
 	if message.Type != TypeChat {
-		return nil, nil
+		return nil
 	}
 	content := strings.TrimLeft(message.Chat().Text.Content, " ")
 	handler := c.defHandler
+	args := []string{}
 	c.handlerMap.Each(func(command string, h HandlerFunc) bool {
 		// if command start with arguments, must is a space of suffix
-		if strings.HasPrefix(content, command + " ") || content == command {
+		switch {
+		case strings.HasPrefix(content, command+" "):
+			args = strings.Split(content[len(command):], " ")
+			handler = h
+			return false
+		case content == command:
 			handler = h
 			return false
 		}
 		return true
 	})
-	return c.middlewares, handler
+	return &Context{
+		Message:     message,
+		middlewares: c.middlewares,
+		handler:     handler,
+		args:        args,
+	}
 }

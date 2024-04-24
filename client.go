@@ -92,13 +92,12 @@ func (c *Client) onMessage(message *Message) error {
 	if !ok {
 		return nil
 	}
-	middlewares, handler := module.handlers(message)
-	return (&Context{
-		Message:     message,
-		Client:      c,
-		middlewares: middlewares,
-		handler:     handler,
-	}).handling()
+	ctx := module.parseContext(message)
+	if ctx == nil {
+		return nil
+	}
+	ctx.Client = c
+	return ctx.handling()
 }
 
 func (c *Client) onEventReceived(ctx context.Context, header *event.EventHeader, rawData []byte) (_ event.EventProcessStatusType, err error) {

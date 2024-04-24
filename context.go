@@ -17,6 +17,8 @@ type Context struct {
 	middlewares []HandlerFunc
 	handler     HandlerFunc
 
+	args []string
+
 	Next func()
 }
 
@@ -26,6 +28,10 @@ func (c *Context) Abort() {
 
 func (c *Context) AbortWithError(err error) {
 	panic(err)
+}
+
+func (c *Context) Args() []string {
+	return c.args
 }
 
 func (c *Context) dealWithMiddlewares() {
