@@ -107,7 +107,7 @@ func (c *ChatChain) parseContext(message *Message) *Context {
 		// if command start with arguments, must is a space of suffix
 		switch {
 		case strings.HasPrefix(content, command+" "):
-			args = strings.Split(content[len(command):], " ")
+			args = strings.Split(content[len(command)+1:], " ")
 			handler = h
 			return false
 		case content == command:
