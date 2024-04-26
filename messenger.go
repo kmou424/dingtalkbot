@@ -3,14 +3,17 @@ package dingtalkbot
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
 	"github.com/zyedidia/generic/queue"
-	"time"
 )
 
-const iMQScanInterval = time.Second
-const iCachePrefix = "message_%s_"
+const (
+	iMQScanInterval = time.Second
+	iCachePrefix    = "message_%s_"
+)
 
 type Messenger struct {
 	cache *badger.DB
@@ -105,21 +108,19 @@ func (m *Messenger) handleMessage(msg Sendable) {
 func (m *Messenger) handleMessageQueue() {
 	m.mqm.Each(func(conversationId string, mq *queue.Queue[Sendable]) bool {
 		prefix := fmt.Sprintf(iCachePrefix, conversationId)
-		for {
-			count, err := m.cacheScan(prefix)
-			if err != nil {
-				logger.Warn(fmt.Sprintf("failed to scan prefix from badgerdb: %s", prefix), "err", err)
-				return false
-			}
-			// 一分钟内发送出去的消息已经大于十条，则不发送
-			if count >= 10 {
-				return true
-			}
-			if !mq.Empty() {
-				m.mq <- mq.Dequeue()
-			}
-			
+		count, err := m.cacheScan(prefix)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("failed to scan prefix from badgerdb: %s", prefix), "err", err)
+			return false
 		}
+		// 一分钟内发送出去的消息已经大于十条，则不发送
+		if count >= 10 {
+			return true
+		}
+		if !mq.Empty() {
+			m.mq <- mq.Dequeue()
+		}
+		return true
 	})
 }
 
